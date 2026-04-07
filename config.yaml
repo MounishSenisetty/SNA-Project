@@ -1,0 +1,26 @@
+seed: 42
+
+data:
+  type: synthetic     # synthetic | cora
+  synthetic:
+    n: 300
+    m: 3              # Barabasi-Albert parameter
+    feature_dim: 16
+
+diffusion:
+  p: 0.1              # activation probability in IC
+  mc_runs: 40         # Monte-Carlo runs per node (increase for better labels)
+  max_steps: 50       # safety cutoff
+
+model:
+  hidden_dim: 64
+  num_layers: 2
+  dropout: 0.2
+  lr: 0.01
+  weight_decay: 0.0005
+  epochs: 200
+
+explain:
+  node_id: 0
+  topk_edges: 20
+  topk_features: 8
