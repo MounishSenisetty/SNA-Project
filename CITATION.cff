@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+title: "Explainable Centrality GNN"
+message: "If you use this repository, please cite it using this metadata."
+type: software
+authors:
+  - family-names: "Mounish"
+    given-names: "M"
+version: "1.0.0"
+date-released: "2026-04-10"
+url: "https://github.com/your-org/explainable-centrality-gnn"
+license: "MIT"
+keywords:
+  - graph neural networks
+  - centrality
+  - explainability
+  - diffusion

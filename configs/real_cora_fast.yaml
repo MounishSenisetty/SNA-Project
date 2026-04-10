@@ -1,0 +1,52 @@
+experiment_name: real_cora_fast
+output_root: runs
+
+seed: 42
+seeds: [42]
+
+data:
+  source: real
+  real:
+    name: cora
+    root: data
+    feature_dim: 16
+
+task:
+  target: diffusion
+  classical_targets: [degree, pagerank]
+
+diffusion:
+  method: ic
+  params: {p: 0.05}
+  mc_runs: 5
+  max_steps: 20
+  n_jobs: 1
+  use_cache: true
+  cache_dir: cache/labels
+
+split: {train_ratio: 0.6, val_ratio: 0.2}
+
+model:
+  names: [gcn]
+  hidden_dim: 64
+  num_layers: 2
+  dropout: 0.3
+
+train:
+  device: auto
+  epochs: 60
+  lr: 0.01
+  weight_decay: 0.0005
+  early_stopping_patience: 12
+  lr_decay: 0.5
+  lr_patience: 5
+  grad_clip: 1.0
+  log_every: 10
+
+metrics:
+  topk: [10, 20, 50]
+
+explain:
+  node_id: 0
+  methods: [gradient, random]
+  fidelity_k: [5, 10, 20]

@@ -1,26 +1,74 @@
+experiment_name: centrality_research_default
+output_root: runs
+
 seed: 42
+seeds: [42, 43, 44]
 
 data:
-  type: synthetic     # synthetic | cora
+  source: synthetic      # synthetic | real
   synthetic:
-    n: 300
-    m: 3              # Barabasi-Albert parameter
+    feature_dim: 16
+    graph:
+      type: ba           # ba | er | ws | sbm | motif
+      n: 300
+      m: 3
+      directed: false
+      weighted: false
+      p: 0.03
+      k: 6
+      rewire_p: 0.2
+      sizes: [100, 100, 100]
+      p_in: 0.08
+      p_out: 0.01
+      motif_count: 8
+      motif_spokes: 6
+      base_p: 0.02
+  real:
+    name: cora           # cora | citeseer | pubmed | karate
+    root: data
     feature_dim: 16
 
+task:
+  target: diffusion      # diffusion | classical | multi
+  classical_targets: [degree, pagerank]
+
 diffusion:
-  p: 0.1              # activation probability in IC
-  mc_runs: 40         # Monte-Carlo runs per node (increase for better labels)
-  max_steps: 50       # safety cutoff
+  method: ic             # ic | lt | sir
+  params:
+    p: 0.1
+    beta: 0.3
+    gamma: 0.2
+  mc_runs: 40
+  max_steps: 50
+  n_jobs: 1
+  use_cache: true
+  cache_dir: cache/labels
+
+split:
+  train_ratio: 0.6
+  val_ratio: 0.2
 
 model:
+  names: [gcn, graphsage, gat, appnp, mlp]
   hidden_dim: 64
   num_layers: 2
   dropout: 0.2
+
+train:
+  device: auto
+  epochs: 200
   lr: 0.01
   weight_decay: 0.0005
-  epochs: 200
+  early_stopping_patience: 30
+  lr_decay: 0.5
+  lr_patience: 10
+  grad_clip: 1.0
+  log_every: 20
+
+metrics:
+  topk: [10, 20, 50]
 
 explain:
   node_id: 0
-  topk_edges: 20
-  topk_features: 8
+  methods: [gnnexplainer, gradient, random]
+  fidelity_k: [5, 10, 20, 40]
