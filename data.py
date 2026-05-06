@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from torch_geometric.data import Data
 from torch_geometric.datasets import KarateClub, Planetoid
-from torch_geometric.utils import from_networkx, to_undirected
+from torch_geometric.utils import from_networkx, to_networkx, to_undirected
 
 
 @dataclass
@@ -33,6 +33,78 @@ def _attach_features(data: Data, feature_dim: int, seed: int):
     if getattr(data, "x", None) is None:
         gen = torch.Generator().manual_seed(seed)
         data.x = torch.randn((data.num_nodes, feature_dim), generator=gen, dtype=torch.float32)
+    return data
+
+
+def _temporal_snapshots(G: nx.Graph, num_snapshots: int, seed: int):
+    if num_snapshots < 2:
+        raise ValueError("temporal.snapshots must be at least 2")
+
+    rng = np.random.default_rng(seed)
+    edges = list(G.edges())
+    rng.shuffle(edges)
+
+    snapshots = []
+    for step in range(num_snapshots):
+        cutoff = max(1, int(len(edges) * (step + 1) / num_snapshots))
+        snapshot = nx.Graph()
+        snapshot.add_nodes_from(G.nodes())
+        snapshot.add_edges_from(edges[:cutoff])
+        snapshots.append(snapshot)
+    return snapshots
+
+
+def _temporal_node_features(G: nx.Graph, num_snapshots: int, seed: int) -> np.ndarray:
+    snapshots = _temporal_snapshots(G, num_snapshots=num_snapshots, seed=seed)
+    degree_history = np.stack(
+        [np.array([snap.degree(node) for node in G.nodes()], dtype=np.float64) for snap in snapshots],
+        axis=0,
+    )
+    active_mask = degree_history > 0
+    first_seen = np.full(len(G.nodes()), num_snapshots - 1, dtype=np.float64)
+    last_seen = np.zeros(len(G.nodes()), dtype=np.float64)
+
+    for node in range(len(G.nodes())):
+        active_steps = np.where(active_mask[:, node])[0]
+        if active_steps.size:
+            first_seen[node] = float(active_steps[0])
+            last_seen[node] = float(active_steps[-1])
+
+    denom = float(max(num_snapshots - 1, 1))
+    temporal_features = np.stack(
+        [
+            degree_history.mean(axis=0),
+            degree_history.std(axis=0),
+            degree_history[-1],
+            degree_history.max(axis=0),
+            active_mask.mean(axis=0),
+            (degree_history[-1] - degree_history[0]) / denom,
+            first_seen / denom,
+            last_seen / denom,
+        ],
+        axis=1,
+    )
+    feature_mean = temporal_features.mean(axis=0, keepdims=True)
+    feature_std = temporal_features.std(axis=0, keepdims=True) + 1e-9
+    return ((temporal_features - feature_mean) / feature_std).astype(np.float32)
+
+
+def apply_temporal_view(data: Data, temporal_cfg: Dict, seed: int) -> Data:
+    if not temporal_cfg.get("enabled", False):
+        return data
+
+    steps = int(temporal_cfg.get("snapshots", 5))
+    graph = to_networkx(data, to_undirected=True)
+    temporal_features = _temporal_node_features(graph.to_undirected(), num_snapshots=steps, seed=seed)
+    if data.x is not None:
+        data.x = torch.cat([data.x.float(), torch.tensor(temporal_features, dtype=torch.float32)], dim=1)
+    else:
+        data.x = torch.tensor(temporal_features, dtype=torch.float32)
+
+    data.temporal_enabled = True
+    data.temporal_snapshots = steps
+    data.temporal_decay = float(temporal_cfg.get("decay", 0.85))
+    data.temporal_feature_dim = int(temporal_features.shape[1])
     return data
 
 
@@ -88,7 +160,13 @@ def generate_synthetic_graph(cfg: Dict, seed: int) -> DatasetBundle:
         G = G.to_directed()
 
     data = _finalize_graph(G, feature_dim=feature_dim, seed=seed, directed=directed, weighted=weighted)
+    temporal_cfg = gcfg.get("temporal", {})
+    data = apply_temporal_view(data, temporal_cfg=temporal_cfg, seed=seed)
     meta = graph_metadata(data, name=f"synthetic-{gtype}")
+    if getattr(data, "temporal_enabled", False):
+        meta["temporal_enabled"] = True
+        meta["temporal_snapshots"] = int(data.temporal_snapshots)
+        meta["temporal_decay"] = float(data.temporal_decay)
     return DatasetBundle(data=data, name=f"synthetic-{gtype}", metadata=meta)
 
 
@@ -152,7 +230,13 @@ def load_real_dataset(cfg: Dict, seed: int) -> DatasetBundle:
         raise ValueError(f"Unsupported real dataset: {dname}")
 
     data = _attach_features(data, feature_dim=int(cfg.get("feature_dim", 16)), seed=seed)
+    temporal_cfg = cfg.get("temporal", {})
+    data = apply_temporal_view(data, temporal_cfg=temporal_cfg, seed=seed)
     meta = graph_metadata(data, name=dname)
+    if getattr(data, "temporal_enabled", False):
+        meta["temporal_enabled"] = True
+        meta["temporal_snapshots"] = int(data.temporal_snapshots)
+        meta["temporal_decay"] = float(data.temporal_decay)
     return DatasetBundle(data=data, name=dname, metadata=meta)
 
 

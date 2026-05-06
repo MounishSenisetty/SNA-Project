@@ -6,6 +6,10 @@ seeds: [42, 43, 44]
 
 data:
   source: synthetic      # synthetic | real
+  temporal:
+    enabled: true        # true | false
+    snapshots: 5
+    decay: 0.85
   synthetic:
     feature_dim: 16
     graph:
